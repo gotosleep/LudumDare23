@@ -12,8 +12,8 @@ $(document).ready(function () {
     var config = {
         width:600,
         height:400,
-        maxRight:300,
-        maxLeft:50
+        maxRight:250,
+        maxLeft:10
     }
 
     Crafty.init(config.width, config.height);
@@ -70,7 +70,7 @@ $(document).ready(function () {
                 this.groundProgress += 16;
             }
         },
-        building1Height: 32,
+        building1Height:32,
         building1:function () {
 
             if (this.buildingProgress < config.width) {
@@ -92,7 +92,7 @@ $(document).ready(function () {
                             }
 
                             Crafty.e("2D, DOM, Attached, " + type)
-                                .attr({ 'x':config.width + (x * this.building1Height), y:placement + (this.building1Height * y), 'z': z});
+                                .attr({ 'x':config.width + (x * this.building1Height), y:placement + (this.building1Height * y), 'z':z});
                         }
                     }
                 }
@@ -103,6 +103,11 @@ $(document).ready(function () {
 
     Crafty.c('Ape', {
         Ape:function () {
+            //setup animations
+            this.requires("SpriteAnimation, Collision")
+                .animate("walk", 0, 0, 1).stop().animate("walk", 20, -1);
+
+
             // A rudimentary way to prevent the user from passing solid areas
             this.bind('Moved',
                 function (from) {
