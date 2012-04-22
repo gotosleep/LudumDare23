@@ -13,7 +13,7 @@ $(document).ready(function () {
         width:600,
         height:400,
         maxRight:250,
-        maxLeft:10
+        maxLeft:0
     }
 
     Crafty.init(config.width, config.height);
@@ -28,6 +28,10 @@ $(document).ready(function () {
         grass2:[1, 0],
         dirt1:[2, 0],
         dirt2:[3, 0]
+    });
+
+    Crafty.sprite(16, "images/people.png", {
+        dude:[0, 0]
     });
 
     Crafty.sprite(32, "images/building.png", {
@@ -61,8 +65,9 @@ $(document).ready(function () {
             this.bind('WorldMoved', function (movement) {
                 this.groundProgress -= movement.x;
                 this.buildingProgress -= movement.x;
-                this.ground(config.width);
+                this.ground(config.width+100);
                 this.building1();
+                this.dude();
             });
         },
         ground:function (x) {
@@ -95,12 +100,19 @@ $(document).ready(function () {
                                 type = y === 0 ? "building1T" : "building1C";
                             }
 
-                            Crafty.e("2D, DOM, explodable, Attached, " + type)
+                            var piece = Crafty.e("2D, DOM, solid, explodable, Gravity, Attached, " + type)
                                 .attr({ 'x':config.width + (x * this.building1Height), y:placement + (this.building1Height * y), 'z':z});
+                            piece.gravity("solid");
                         }
                     }
                 }
                 this.buildingProgress = config.width + (width * this.building1Height) + 16;
+            }
+        },
+        dude:function () {
+            if (Crafty.math.randomInt(1, 20) % 20 == 0) {
+                Crafty.e("Dude, Attached, ScaredAI")
+                    .attr({ 'x':config.width, y:config.height - 32, 'z':4});
             }
         }
     });
@@ -109,7 +121,7 @@ $(document).ready(function () {
         _hoverOffset:0,
         _hoverDirection:"up",
         _hoverMax:15,
-        _resting: undefined,
+        _resting:undefined,
         _keysDown:0,
         Robo:function () {
             this._resting = this.y;
@@ -140,7 +152,7 @@ $(document).ready(function () {
             // A rudimentary way to prevent the user from passing solid areas
             this.bind('Moved',
                 function (from) {
-                    if (this.hit('solid')) {
+                    if (this.hit('ground')) {
                         this.attr({x:from.x, y:from.y});
                     } else if (this.x > config.maxRight) {
                         Crafty.trigger("WorldMoved", {'x':this.x - from.x, 'y':this.y - from.y});
@@ -249,6 +261,39 @@ $(document).ready(function () {
         }
     });
 
+    Crafty.c('Expires', {
+        init:function () {
+            this.requires("2D");
+            this.bind('EnterFrame', function () {
+                if (this.x + this.w < 0 || this.x > (config.width + this.w)) {
+                    this.destroy();
+                }
+            });
+        }
+    });
+
+    Crafty.c('Dude', {
+        init:function () {
+            this.requires("2D, DOM, SpriteAnimation, dude, Collision, explodable, Expires");
+        }
+    });
+
+    Crafty.c("ScaredAI", {
+        _relative:undefined,
+        _direction:"right",
+        init:function () {
+            this.bind('EnterFrame', function () {
+                if ((this.x + (this.w / 2)) < (config.player.x + (config.player.w / 2))) {
+                    this._direction = "left";
+                } else {
+                    this._direction = "right";
+                }
+                var movement = this._direction === "right" ? 1 : -1;
+                this.attr({x:this.x + movement});
+            });
+        }
+    });
+
     Crafty.c("RightControls", {
         init:function () {
             this.requires('Multiway');
@@ -272,7 +317,7 @@ $(document).ready(function () {
             .css({ "text-align":"center", "color":"white" });
 
         //load takes an array of assets and a callback when complete
-        Crafty.load(["images/robot.png", "images/ground.png", "images/building.png", "images/laser.png"], function () {
+        Crafty.load(["images/robot.png", "images/ground.png", "images/building.png", "images/laser.png", "images/people.png"], function () {
             Crafty.scene("main"); //when everything is loaded, run the main scene
         });
     });
@@ -283,7 +328,7 @@ $(document).ready(function () {
         Generator.ground(config.width);
         Crafty.background("#FFF");
 
-        var player = Crafty.e("2D, DOM, Robo, robot, RightControls, SpriteAnimation, Collision, LaserShooter, Grid")
+        config.player = Crafty.e("2D, DOM, Robo, robot, RightControls, SpriteAnimation, Collision, LaserShooter, Grid")
             .attr({ x:150, y:150, z:2 })
             .rightControls(4)
             .Robo();
