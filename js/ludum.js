@@ -114,7 +114,7 @@ $(document).ready(function () {
 
                             var piece = Crafty.e("2D, DOM, solid, Building, Life, Gravity, Attached, " + type)
                                 .attr({ 'x':config.width + (x * this.building1Height), y:placement + (this.building1Height * y), 'z':z});
-                            piece.life(5);
+                            piece.life(2);
                             piece.gravity("solid");
                         }
                     }
