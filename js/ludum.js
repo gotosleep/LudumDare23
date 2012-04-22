@@ -10,9 +10,9 @@ $(document).ready(function () {
     //start crafty
 
     var config = {
-        width:600,
+        width:700,
         height:400,
-        maxRight:250,
+        maxRight:300,
         maxLeft:0
     }
 
@@ -34,7 +34,7 @@ $(document).ready(function () {
         dude:[0, 0]
     });
 
-    Crafty.sprite(32, "images/building.png", {
+    Crafty.sprite(64, "images/building.png", {
         building1L:[0, 0],
         building1R:[1, 0],
         building1TL:[2, 0],
@@ -91,13 +91,13 @@ $(document).ready(function () {
                 this.groundProgress += 16;
             }
         },
-        building1Height:32,
+        building1Height:64,
         building1:function () {
 
             if (this.buildingProgress < config.width) {
-                var width = Crafty.math.randomInt(2, 6);
+                var width = Crafty.math.randomInt(2, 4);
                 if (Crafty.math.randomInt(1, 2) % 2 == 0) {
-                    var height = Crafty.math.randomInt(2, 6);
+                    var height = Crafty.math.randomInt(2, 5);
                     var placement = config.height - 16 - (this.building1Height * height);
                     var z = Crafty.math.randomInt(1, 2);
 
@@ -112,8 +112,9 @@ $(document).ready(function () {
                                 type = y === 0 ? "building1T" : "building1C";
                             }
 
-                            var piece = Crafty.e("2D, DOM, solid, Life, Gravity, Attached, " + type)
+                            var piece = Crafty.e("2D, DOM, solid, Building, Life, Gravity, Attached, " + type)
                                 .attr({ 'x':config.width + (x * this.building1Height), y:placement + (this.building1Height * y), 'z':z});
+                            piece.life(5);
                             piece.gravity("solid");
                         }
                     }
@@ -123,14 +124,17 @@ $(document).ready(function () {
         },
         dude:function () {
             if (Crafty.math.randomInt(1, 20) % 20 == 0) {
-                Crafty.e("Dude, Attached, ScaredAI")
+                Crafty.e("Dude, Attached, enemy, ScaredAI")
                     .attr({ 'x':config.width, y:config.height - 32, 'z':4});
             }
         },
         tank:function () {
-            if (Crafty.math.randomInt(1, 50) % 50 == 0) {
-                var tank = Crafty.e("Tank, Attached, TankAI");
-                tank.attr({ 'x':config.width, y:config.height - (tank.h + 16), 'z':4});
+            if (Crafty.math.randomInt(1, 40) % 40 == 0) {
+                var tank = Crafty.e("Tank, Attached, enemy, TankAI");
+                tank.attr({ 'x':config.width, y:config.height - tank.h - 16, 'z':3});
+                if (tank.hit('Tank')) {
+                    tank.destroy();
+                }
             }
         }
     });
@@ -140,10 +144,9 @@ $(document).ready(function () {
         _hoverDirection:"up",
         _hoverMax:15,
         _resting:undefined,
-        _keysDown:0,
+        _hovering:true,
         Robo:function () {
             this.requires("SpriteAnimation, Collision, Life");
-
             this._resting = this.y;
             //setup animations
             this.animate("walk_left", 2, 0, 3)
@@ -156,48 +159,47 @@ $(document).ready(function () {
                     if (direction.x < 0) {
                         if (!this.isPlaying("walk_left"))
                             this.stop().animate("walk_left", 20, -1);
-                    }
-                    if (direction.x > 0) {
+                    } else if (direction.x > 0) {
                         if (!this.isPlaying("walk_right"))
                             this.stop().animate("walk_right", 20, -1);
                     }
                 });
 
-            this.life(10);
+            this.life(100);
 
+            this.bind("KeyDown",
+                function (e) {
+                    if (e.key === Crafty.keys.UP_ARROW || Crafty.keys === Crafty.keys.DOWN_ARROW) {
+                        this._hovering = false;
+                    }
+                }).bind("KeyUp", function (e) {
+                    if (e.key === Crafty.keys.UP_ARROW || Crafty.keys === Crafty.keys.DOWN_ARROW) {
+                        this._hovering = !Crafty.keydown[Crafty.keys.UP_ARROW] && !Crafty.keydown[Crafty.keys.DOWN_ARROW];
+                    }
+                });
 
             // A rudimentary way to prevent the user from passing solid areas
             this.bind('Moved',
                 function (from) {
                     if (this.hit('ground')) {
                         this.attr({x:from.x, y:from.y});
-                    } else if (this.x > config.maxRight) {
-                        Crafty.trigger("WorldMoved", {'x':this.x - from.x, 'y':this.y - from.y});
+                        return;
+                    }
+                    if (this.x > config.maxRight) {
+                        Crafty.trigger("WorldMoved", {'x':((this.x - from.x) / 2)});
                         this.attr({x:config.maxRight});
                     } else if (this.x < config.maxLeft) {
                         this.attr({x:config.maxLeft});
                     }
-                    this._resting = this.y;
+                    if (this.y - from.y !== 0) {
+                        this._resting = this.y;
+                    }
                 }).onHit("fire", function () {
                     this.destroy();
                 });
 
-            this.bind('KeyDown', function (e) {
-                if (e.key === Crafty.keys.UP_ARROW || e.key === Crafty.keys.DOWN_ARROW ||
-                    e.key === Crafty.keys.RIGHT_ARROW || e.key === Crafty.keys.LEFT_ARROW) {
-                    this._keysDown += 1;
-                }
-            });
-
-            this.bind('KeyUp', function (e) {
-                if (e.key === Crafty.keys.UP_ARROW || e.key === Crafty.keys.DOWN_ARROW ||
-                    e.key === Crafty.keys.RIGHT_ARROW || e.key === Crafty.keys.LEFT_ARROW) {
-                    this._keysDown -= 1;
-                }
-            });
-
             this.bind('EnterFrame', function () {
-                if (this._keysDown > 0 || this._resting === undefined) {
+                if (!this._hovering || this._resting === undefined) {
                     return;
                 }
                 if (this._hoverDirection === "up") {
@@ -222,31 +224,49 @@ $(document).ready(function () {
 
 
     Crafty.c('LaserShooter', {
-        _key:Crafty.keys.SPACE,
         _direction:"right",
-
+        _firing:false,
+        _fireDelay:300,
         init:function () {
+            this.requires('Delay');
             var shooter = this;
             //Create the bomb
             this.bind('KeyDown', function (e) {
-                if (e.key !== this._key) {
-                    return;
-                }
-                var laser = Crafty.e('Laser');
-                var x = ((shooter.w - laser.w) / 2) + shooter.x;
-                laser.attr({z:shooter.z, 'x':x, y:shooter.y + 21});
-                laser.shoot(shooter, this._direction);
-            });
-
-            //change direction when a direction change event is received
-            this.bind("NewDirection",
-                function (direction) {
-                    if (direction.x < 0) {
-                        this._direction = "left";
-                    } else if (direction.x > 0) {
-                        this._direction = "right";
-                    }
+                this.aim();
+            })
+                .bind('KeyUp', function (e) {
+                    this.aim();
                 });
+        },
+        aim:function () {
+            var direction = "";
+            if (Crafty.keydown[Crafty.keys.D]) {
+                direction += "right";
+            } else if (Crafty.keydown[Crafty.keys.A]) {
+                direction += "left";
+            }
+            if (Crafty.keydown[Crafty.keys.W]) {
+                direction += "up";
+            } else if (Crafty.keydown[Crafty.keys.S]) {
+                direction += "down";
+            }
+            if (direction !== "") {
+                this._direction = direction;
+                this.fire();
+            }
+        },
+        fire:function () {
+            if (!this._firing) {
+                this._firing = true;
+                var laser = Crafty.e('Laser');
+                var x = ((this.w - laser.w) / 2) + this.x;
+                laser.attr({z:this.z, 'x':x, y:this.y + 21});
+                laser.shoot(this, this._direction);
+                this.delay(function () {
+                    this._firing = false;
+                    this.aim();
+                }, this._fireDelay);
+            }
         }
     });
 
@@ -314,20 +334,20 @@ $(document).ready(function () {
 
     Crafty.c('Bullet', {
         init:function () {
-            this.requires("tankBullet, Projectile");
+            this.requires("tankBullet, Projectile, Attached");
             this.crop(0, 9, 20, 20);
             this.life(5);
         },
         shoot:function (shooter, target) {
-            this.shootTarget(shooter, target, 4);
+            this.shootTarget(shooter, target, 3.5);
         }
     });
 
     Crafty.c('Laser', {
-        _speedX:8,
+        _speedX:9,
         _speedY:-7,
         init:function () {
-            this.requires("laserBeam, Projectile");
+            this.requires("laserBeam, Projectile, Attached");
             this.life(5);
             this.crop(0, 0, 32, 6);
         },
@@ -338,12 +358,29 @@ $(document).ready(function () {
     });
 
     Crafty.c('Projectile', {
+        _targetType:undefined,
         init:function () {
-            this.requires("2D, DOM, SpriteAnimation, Collision, Life, Attached");
+            this.requires("2D, DOM, SpriteAnimation, Collision, Life");
         },
         shootDirection:function (shooter, direction, speedX, speedY) {
-            if (direction === "right") {
+            if (direction === "rightdown") {
                 speedX *= -1;
+            } else if (direction === "leftdown") {
+            } else if (direction === "leftup") {
+                speedY *= -1;
+            } else if (direction === "rightup") {
+                speedY *= -1;
+                speedX *= -1;
+            } else if (direction === "right") {
+                speedX *= -1;
+                speedY = 0;
+            } else if (direction == "left") {
+                speedY = 0;
+            } else if (direction === "down") {
+                speedX = 0;
+            } else if (direction == "up") {
+                speedX = 0;
+                speedY *= -1;
             }
             this.start(speedX, speedY, shooter);
         },
@@ -362,9 +399,12 @@ $(document).ready(function () {
             this.bind('EnterFrame', function () {
                 this.attr({'x':this.x - speedX, 'y':this.y - speedY});
 
-                $.each(this.hit("Life"), function (index, value) {
-                    if (value.obj !== shooter) {
-                        projectile.attack(value.obj);
+                var targetType = this._targetType !== undefined ? this._targetType : "Life";
+
+                $.each(this.hit(targetType), function (index, value) {
+                    var target = value.obj;
+                    if (target !== shooter) {
+                        projectile.attack(target);
                         if (projectile.life() <= 0) {
                             return false;
                         }
@@ -376,6 +416,12 @@ $(document).ready(function () {
                 }
 
             });
+        },
+        targetType:function (type) {
+            if (type !== undefined) {
+                this._targetType = type;
+            }
+            return this._targetType;
         }
 
     });
@@ -384,7 +430,12 @@ $(document).ready(function () {
         _direction:"right",
         _minimumMovement:100,
         _directionMovement:0,
+        _firing:false,
         init:function () {
+            this.requires("Delay")
+                .animate("fire", 1, 0, 3)
+                .animate("normal", 0, 0, 0);
+
             this.bind('EnterFrame', function () {
                 if ((this.x + (this.w / 2)) < (config.player.x + (config.player.w / 2))) {
                     this.changeDirection("right");
@@ -395,22 +446,37 @@ $(document).ready(function () {
                 this.attr({x:this.x + movement});
                 if (this.hit('Tank')) {
                     this.attr({x:this.x - movement});
-                } else {
-                    this._directionMovement += Crafty.math.abs(movement);
                 }
+                this._directionMovement += Crafty.math.abs(movement);
 
-                if (Crafty.math.randomInt(1, 150) % 150 == 0) {
-                    var b = Crafty.e('Bullet');
-                    var x = ((this.w - this.w) / 2) + this.x;
-                    b.attr({z:this.z, 'x':x, y:this.y});
-                    b.shoot(this, config.player);
+                if (Crafty.math.randomInt(1, 50) % 50 == 0) {
+                    this.fire();
                 }
             });
+
         },
         changeDirection:function (newDirection) {
             if (newDirection != this._direction && this._directionMovement >= this._minimumMovement) {
                 this._directionMovement = 0;
                 this._direction = newDirection;
+            }
+        },
+        fire:function () {
+            if (this._firing === false) {
+                this._firing = true;
+                //setup animations
+
+                this.stop().animate("fire", 75, 0).bind("AnimationEnd", function () {
+                    this.delay(function () {
+                        this.animate("normal", 100000, -1);
+                        this._firing = false;
+                        var b = Crafty.e('Bullet');
+                        var x = ((this.w - this.w) / 2) + this.x;
+                        b.attr({z:this.z, 'x':x, y:this.y});
+                        b.targetType("Robo");
+                        b.shoot(this, config.player);
+                    }, 750);
+                });
             }
         }
     });
@@ -436,7 +502,7 @@ $(document).ready(function () {
         },
 
         rightControls:function (speed) {
-            this.multiway(speed, {UP_ARROW:-90, DOWN_ARROW:90, RIGHT_ARROW:0, LEFT_ARROW:180})
+            this.multiway(speed, {UP_ARROW:-90, DOWN_ARROW:90, RIGHT_ARROW:0, LEFT_ARROW:180});
             return this;
         }
 
@@ -455,8 +521,36 @@ $(document).ready(function () {
         //load takes an array of assets and a callback when complete
         Crafty.load(["images/robot.png", "images/ground.png", "images/building.png", "images/laser.png",
             "images/people.png", "images/tank.png"], function () {
-            Crafty.scene("main"); //when everything is loaded, run the main scene
+            Crafty.scene("instructions"); //when everything is loaded, run the main scene
         });
+    });
+
+    //the loading screen that will display while our assets load
+    Crafty.scene("instructions", function () {
+        //black background with some loading text
+        Crafty.background("#000");
+        Crafty.e("2D, DOM, Text").attr({ w:config.width - 150, h:20, x:150, y:75 })
+            .text("Movement: left, right, up, down")
+            .css({ "text-align":"left", "color":"white", "font-weight":"bold", "font-size":"x-large" });
+        Crafty.e("2D, DOM, Text").attr({ w:config.width - 150, h:20, x:150, y:125 })
+            .text("Fire Weapon: a, d, w, s")
+            .css({ "text-align":"left", "color":"white", "font-weight":"bold", "font-size":"x-large" });
+
+        var proceed = Crafty.e("2D, DOM, Text").attr({ w:config.width - 150, h:20, x:150, y:250 })
+            .text("Press Enter to continue.")
+            .css({ "text-align":"left", "color":"white", "font-weight":"bold", "font-size":"xx-large" });
+
+        proceed.bind("KeyDown", function (e) {
+            if (e.key == Crafty.keys.ENTER) {
+                Crafty.scene("main"); //when everything is loaded, run the main scene
+            }
+        });
+
+        //load takes an array of assets and a callback when complete
+//        Crafty.load(["images/robot.png", "images/ground.png", "images/building.png", "images/laser.png",
+//            "images/people.png", "images/tank.png"], function () {
+//            Crafty.scene("main"); //when everything is loaded, run the main scene
+//        });
     });
 
     Crafty.scene("main", function () {
@@ -466,8 +560,8 @@ $(document).ready(function () {
         Crafty.background("#FFF");
 
         config.player = Crafty.e("2D, DOM, Robo, robot, RightControls, SpriteAnimation, Collision, LaserShooter, Grid")
-            .attr({ x:150, y:150, z:2 })
-            .rightControls(4)
+            .attr({ x:150, y:125, z:2 })
+            .rightControls({x:6, y:5})
             .Robo();
 
     });
