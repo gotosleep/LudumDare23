@@ -49,7 +49,8 @@ $(document).ready(function () {
     });
 
     Crafty.sprite(32, "images/laser.png", {
-        laserBeam:[0, 0]
+        laserBeam:[0, 0],
+        explosion:[1, 0]
     });
 
     // audio
@@ -165,7 +166,7 @@ $(document).ready(function () {
                     }
                 });
 
-            this.life(100);
+            this.life(50);
 
             this.bind("KeyDown",
                 function (e) {
@@ -218,6 +219,36 @@ $(document).ready(function () {
                 }
             });
 
+            this.bind("Died", function () {
+                var baseX = this.x - 50;
+                var baseY = this.y - 50;
+                var size = 32;
+                var last = undefined;
+                var max = 0;
+                var width = 5;
+                for (var x = 0; x <= width; ++x) {
+                    for (var y = 0; y <= width; ++y) {
+                        if (!((x === 0 || x === width) && (y === 0 || y === width))) {
+                            var count = Crafty.math.randomInt(1, 15);
+                            var explosion = Crafty.e("Explosion")
+                                .repeatCount(count)
+                                .attr({x:baseX + (x * size), y:baseY + (y * size)})
+                                .explode();
+                            if (count > max) {
+                                last = explosion;
+                                max = count;
+                            }
+                        }
+                    }
+                }
+
+                last.bind("AnimationEnd", function () {
+                    Crafty.scene("gameOver");
+                    console.log("Game Over");
+                });
+
+            });
+
             return this;
         }
     });
@@ -260,7 +291,7 @@ $(document).ready(function () {
                 this._firing = true;
                 var laser = Crafty.e('Laser');
                 var x = ((this.w - laser.w) / 2) + this.x;
-                laser.attr({z:this.z, 'x':x, y:this.y + 21});
+                laser.attr({z:this.z, 'x':x, y:this.y + 13});
                 laser.shoot(this, this._direction);
                 this.delay(function () {
                     this._firing = false;
@@ -271,9 +302,12 @@ $(document).ready(function () {
     });
 
     Crafty.c('Life', {
+        _maxLife:1,
         _life:1,
         _cost:1,
         _power:1,
+        init:function () {
+        },
         attack:function (other) {
             other.hurt(this._power);
             this.hurt(other.cost());
@@ -283,12 +317,15 @@ $(document).ready(function () {
                 power = 1;
             }
             this._life -= power;
+            this.trigger("Hurt", {current:this._life, max:this._maxLife, percent:((this._life / this._maxLife) * 100) });
+
             if (this._life <= 0) {
-                this.destroy();
+                this.die();
             }
         },
         life:function (life) {
-            if (life !== undefined) {
+            if (life) {
+                this._maxLife = life;
                 this._life = life;
             }
             return this._life;
@@ -304,6 +341,36 @@ $(document).ready(function () {
                 this._power = power;
             }
             return this._power;
+        },
+        die:function () {
+            this.trigger("Died");
+            Crafty.e("Explosion")
+                .explode(this);
+            this.destroy();
+        }
+    });
+
+    Crafty.c("Explosion", {
+        _repeatCount:1,
+        init:function () {
+            this.requires("2D, DOM, explosion, SpriteAnimation, Attached");
+            this.animate("explode", 1, 0, 2);
+        },
+        explode:function (target) {
+            if (target) {
+                this.attr({x:target.x, y:target.y});
+            }
+            this.attr({z:10000});
+            this.stop().animate("explode", 10, this._repeatCount).bind("AnimationEnd", function () {
+                this.destroy();
+            });
+            return this;
+        },
+        repeatCount:function (count) {
+            if (count) {
+                this._repeatCount = count;
+            }
+            return this;
         }
     });
 
@@ -387,10 +454,17 @@ $(document).ready(function () {
         shootTarget:function (shooter, target, speed) {
             var x = target.x - shooter.x;
             var y = target.y - shooter.y;
-            var speedY = speed;
 
-            var time = y / speedY;
-            var speedX = x / time;
+            var speedY, speedX, time;
+            if (Crafty.math.abs(y) > Crafty.math.abs(x)) {
+                speedY = speed;
+                time = y / speedY;
+                speedX = x / time;
+            } else {
+                speedX = speed;
+                time = x / speedX;
+                speedY = y / time;
+            }
 
             this.start(speedX, speedY, shooter);
         },
@@ -426,13 +500,22 @@ $(document).ready(function () {
 
     });
 
-    Crafty.c("TankAI", {
+    Crafty.c("BaseAI", {
         _direction:"right",
         _minimumMovement:100,
         _directionMovement:0,
+        changeDirection:function (newDirection) {
+            if (newDirection != this._direction && this._directionMovement >= this._minimumMovement) {
+                this._directionMovement = 0;
+                this._direction = newDirection;
+            }
+        }
+    });
+
+    Crafty.c("TankAI", {
         _firing:false,
         init:function () {
-            this.requires("Delay")
+            this.requires("BaseAI, Delay")
                 .animate("fire", 1, 0, 3)
                 .animate("normal", 0, 0, 0);
 
@@ -455,12 +538,6 @@ $(document).ready(function () {
             });
 
         },
-        changeDirection:function (newDirection) {
-            if (newDirection != this._direction && this._directionMovement >= this._minimumMovement) {
-                this._directionMovement = 0;
-                this._direction = newDirection;
-            }
-        },
         fire:function () {
             if (this._firing === false) {
                 this._firing = true;
@@ -482,15 +559,18 @@ $(document).ready(function () {
     });
 
     Crafty.c("ScaredAI", {
-        _direction:"right",
         init:function () {
+            this.requires("BaseAI");
             this.bind('EnterFrame', function () {
-                if ((this.x + (this.w / 2)) < (config.player.x + (config.player.w / 2))) {
-                    this._direction = "left";
+                if ((this.x >= 0 && (this.x + (this.w / 2)) < (config.player.x + (config.player.w / 2)))
+                    || this.x >= config.width) {
+                    this.changeDirection("left");
                 } else {
-                    this._direction = "right";
+                    this.changeDirection("right");
                 }
                 var movement = this._direction === "right" ? 1 : -1;
+                this._directionMovement += Crafty.math.abs(movement);
+
                 this.attr({x:this.x + movement});
             });
         }
@@ -576,16 +656,45 @@ $(document).ready(function () {
         });
     });
 
+    Crafty.scene("gameOver", function () {
+
+        var css = { "text-align":"center", "color":"white", "font-weight":"bold", "font-size":"xx-large"};
+
+        Crafty.background("#000");
+        Crafty.e("2D, DOM, Text").attr({ w:config.width, h:35, x:0, y:100 })
+            .text("GAME OVER")
+            .css(css);
+
+        var proceed = Crafty.e("2D, DOM, Text, BlinkingText").attr({ w:config.width, h:20, x:0, y:config.height - 100 })
+            .text("Press Enter to try again")
+            .css({ "text-align":"center", "color":"white", "font-weight":"bold", "font-size":"xx-large" });
+        proceed.startBlink();
+
+        proceed.bind("KeyDown", function (e) {
+            if (e.key == Crafty.keys.ENTER) {
+                Crafty.scene("main");
+            }
+        });
+
+    });
+
     Crafty.scene("main", function () {
 
-        var Generator = Crafty.e("Generator");
+        var Generator = Crafty.e("Generator, 2D");
         Generator.ground(config.width);
         Crafty.background("#FFF");
+
+        var css = { "text-align":"left", "color":"black", "font-weight":"bold", "font-size":"large"};
+        var health = Crafty.e("2D, DOM, Text").attr({ w:150, h:35, x:config.width - 150, y:10 })
+            .text("Health: " + "100 %")
+            .css(css);
 
         config.player = Crafty.e("2D, DOM, Robo, robot, RightControls, SpriteAnimation, Collision, LaserShooter, Grid")
             .attr({ x:150, y:125, z:2 })
             .rightControls({x:6, y:5})
-            .Robo();
+            .Robo().bind("Hurt", function (data) {
+                health.text("Health: " + parseInt(data.percent) + "%");
+            });
 
     });
 
