@@ -47,6 +47,12 @@ $(document).ready(function () {
         laserBeam:[0, 0]
     });
 
+    // audio
+
+    Crafty.audio.add({
+        laser:["sounds/laser.wav"]
+    });
+
     Crafty.c('Attached', {
         init:function () {
             this.bind('WorldMoved', function (movement) {
@@ -65,7 +71,7 @@ $(document).ready(function () {
             this.bind('WorldMoved', function (movement) {
                 this.groundProgress -= movement.x;
                 this.buildingProgress -= movement.x;
-                this.ground(config.width+100);
+                this.ground(config.width + 100);
                 this.building1();
                 this.dude();
             });
@@ -84,7 +90,7 @@ $(document).ready(function () {
 
             if (this.buildingProgress < config.width) {
                 var width = Crafty.math.randomInt(2, 6);
-                if (Crafty.math.randomInt(1, 4) % 4 == 0) {
+                if (Crafty.math.randomInt(1, 2) % 2 == 0) {
                     var height = Crafty.math.randomInt(2, 6);
                     var placement = config.height - 16 - (this.building1Height * height);
                     var z = Crafty.math.randomInt(1, 2);
@@ -100,7 +106,7 @@ $(document).ready(function () {
                                 type = y === 0 ? "building1T" : "building1C";
                             }
 
-                            var piece = Crafty.e("2D, DOM, solid, explodable, Gravity, Attached, " + type)
+                            var piece = Crafty.e("2D, DOM, solid, Life, Gravity, Attached, " + type)
                                 .attr({ 'x':config.width + (x * this.building1Height), y:placement + (this.building1Height * y), 'z':z});
                             piece.gravity("solid");
                         }
@@ -126,12 +132,7 @@ $(document).ready(function () {
         Robo:function () {
             this._resting = this.y;
             //setup animations
-            this.requires("SpriteAnimation, Collision")
-                .animate("walk", 0, 0, 1).stop().animate("walk", 20, -1);
-
-
-            //setup animations
-            this.requires("SpriteAnimation, Collision")
+            this.requires("SpriteAnimation, Collision, Life")
                 .animate("walk_left", 2, 0, 3)
                 .animate("walk_right", 0, 0, 1)
                 .stop().animate("walk_right", 20, -1)
@@ -148,6 +149,8 @@ $(document).ready(function () {
                             this.stop().animate("walk_right", 20, -1);
                     }
                 });
+
+            this.life(10);
 
             // A rudimentary way to prevent the user from passing solid areas
             this.bind('Moved',
@@ -206,21 +209,22 @@ $(document).ready(function () {
     Crafty.c('Laser', {
         _speedX:8,
         _speedY:7,
-        _life:5,
         init:function () {
-            this.requires("2D, DOM, SpriteAnimation, laserBeam, Collision");
+            this.requires("2D, DOM, SpriteAnimation, laserBeam, Collision, Life");
+            this.life(5);
             this.crop(0, 0, 32, 6);
         },
-        start:function (direction) {
+        start:function (direction, shooter) {
+//            Crafty.audio.play("laser");
             this.bind('EnterFrame', function () {
                 var change = direction === "right" ? this._speedX : -1 * this._speedX;
                 this.attr({x:this.x + change, y:this.y + this._speedY});
                 var laser = this;
-                $.each(this.hit("explodable"), function (index, value) {
-                    value.obj.destroy();
-                    laser._life -= 1;
-                    if (laser._life <= 0) {
-                        return false;
+
+                $.each(this.hit("Life"), function (index, value) {
+                    if (value.obj !== shooter) {
+                        value.obj.punch(1);
+                        laser.punch(1);
                     }
                 });
 
@@ -246,7 +250,7 @@ $(document).ready(function () {
                 var laser = Crafty.e('Laser');
                 var x = ((shooter.w - laser.w) / 2) + shooter.x;
                 laser.attr({z:shooter.z, 'x':x, y:shooter.y + 21});
-                laser.start(this._direction);
+                laser.start(this._direction, shooter);
             });
 
             //change direction when a direction change event is received
@@ -258,6 +262,25 @@ $(document).ready(function () {
                         this._direction = "right";
                     }
                 });
+        }
+    });
+
+    Crafty.c('Life', {
+        _life:1,
+        punch:function (power) {
+            if (power === undefined) {
+                power = 1;
+            }
+            this._life -= power;
+            if (this._life <= 0) {
+                this.destroy();
+            }
+        },
+        life:function (life) {
+            if (life !== undefined) {
+                this._life = life;
+            }
+            return this._life;
         }
     });
 
@@ -274,7 +297,7 @@ $(document).ready(function () {
 
     Crafty.c('Dude', {
         init:function () {
-            this.requires("2D, DOM, SpriteAnimation, dude, Collision, explodable, Expires");
+            this.requires("2D, DOM, SpriteAnimation, dude, Collision, Life, Expires");
         }
     });
 
