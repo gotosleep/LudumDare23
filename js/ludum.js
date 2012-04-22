@@ -508,6 +508,30 @@ $(document).ready(function () {
 
     });
 
+    Crafty.c("BlinkingText", {
+        _blinking:false,
+        init:function () {
+            this.requires("Tween");
+            this.bind("TweenEnd", function () {
+                if (this._blinking) {
+                    this._blink();
+                }
+            });
+        },
+        startBlink:function () {
+            this._blinking = true;
+            this._blink();
+        },
+        _blink:(function () {
+            if (this.alpha < 1.0) {
+                this.tween({alpha:1.0}, 50);
+            } else {
+                this.tween({alpha:0.2}, 50);
+            }
+
+        })
+    });
+
     //SCENES
 
     //the loading screen that will display while our assets load
@@ -520,7 +544,7 @@ $(document).ready(function () {
 
         //load takes an array of assets and a callback when complete
         Crafty.load(["images/robot.png", "images/ground.png", "images/building.png", "images/laser.png",
-            "images/people.png", "images/tank.png"], function () {
+            "images/people.png", "images/tank.png", "images/title.png"], function () {
             Crafty.scene("instructions"); //when everything is loaded, run the main scene
         });
     });
@@ -528,29 +552,28 @@ $(document).ready(function () {
     //the loading screen that will display while our assets load
     Crafty.scene("instructions", function () {
         //black background with some loading text
-        Crafty.background("#000");
-        Crafty.e("2D, DOM, Text").attr({ w:config.width - 150, h:20, x:150, y:75 })
-            .text("Movement: left, right, up, down")
-            .css({ "text-align":"left", "color":"white", "font-weight":"bold", "font-size":"x-large" });
-        Crafty.e("2D, DOM, Text").attr({ w:config.width - 150, h:20, x:150, y:125 })
-            .text("Fire Weapon: a, d, w, s")
-            .css({ "text-align":"left", "color":"white", "font-weight":"bold", "font-size":"x-large" });
 
-        var proceed = Crafty.e("2D, DOM, Text").attr({ w:config.width - 150, h:20, x:150, y:250 })
-            .text("Press Enter to continue.")
+        var css = { "text-align":"left", "color":"white", "font-weight":"bold", "font-size":"x-large",
+            "background":"rgba(0, 0, 0, 0.6)", "padding-left":"10px"};
+
+        Crafty.background("url(images/title.png)");
+        Crafty.e("2D, DOM, Text").attr({ w:config.width - 300, h:40, x:300, y:0 })
+            .text("Movement: left, right, up, down")
+            .css(css);
+        Crafty.e("2D, DOM, Text").attr({ w:config.width - 300, h:35, x:300, y:40 })
+            .text("Fire Weapon: a, d, w, s")
+            .css(css);
+
+        var proceed = Crafty.e("2D, DOM, Text, BlinkingText").attr({ w:config.width - 180, h:20, x:180, y:config.height - 50 })
+            .text("Press Enter to continue")
             .css({ "text-align":"left", "color":"white", "font-weight":"bold", "font-size":"xx-large" });
+        proceed.startBlink();
 
         proceed.bind("KeyDown", function (e) {
             if (e.key == Crafty.keys.ENTER) {
                 Crafty.scene("main"); //when everything is loaded, run the main scene
             }
         });
-
-        //load takes an array of assets and a callback when complete
-//        Crafty.load(["images/robot.png", "images/ground.png", "images/building.png", "images/laser.png",
-//            "images/people.png", "images/tank.png"], function () {
-//            Crafty.scene("main"); //when everything is loaded, run the main scene
-//        });
     });
 
     Crafty.scene("main", function () {
