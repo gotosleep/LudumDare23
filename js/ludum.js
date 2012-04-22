@@ -19,7 +19,7 @@ $(document).ready(function () {
     Crafty.init(config.width, config.height);
 
     //turn the sprite map into usable components
-    Crafty.sprite(128, "images/robot.png", {
+    Crafty.sprite(68, 121, "images/robot.png", {
         robot:[0, 0]
     });
 
@@ -41,6 +41,11 @@ $(document).ready(function () {
         building1TR:[3, 0],
         building1T:[4, 0],
         building1C:[5, 0]
+    });
+
+    Crafty.sprite(31, 29, "images/tank.png", {
+        tank:[0, 0],
+        tankBullet:[0, 1]
     });
 
     Crafty.sprite(32, "images/laser.png", {
@@ -74,6 +79,7 @@ $(document).ready(function () {
                 this.ground(config.width + 100);
                 this.building1();
                 this.dude();
+                this.tank();
             });
         },
         ground:function (x) {
@@ -120,6 +126,12 @@ $(document).ready(function () {
                 Crafty.e("Dude, Attached, ScaredAI")
                     .attr({ 'x':config.width, y:config.height - 32, 'z':4});
             }
+        },
+        tank:function () {
+            if (Crafty.math.randomInt(1, 50) % 50 == 0) {
+                var tank = Crafty.e("Tank, Attached, TankAI");
+                tank.attr({ 'x':config.width, y:config.height - (tank.h + 16), 'z':4});
+            }
         }
     });
 
@@ -130,10 +142,11 @@ $(document).ready(function () {
         _resting:undefined,
         _keysDown:0,
         Robo:function () {
+            this.requires("SpriteAnimation, Collision, Life");
+
             this._resting = this.y;
             //setup animations
-            this.requires("SpriteAnimation, Collision, Life")
-                .animate("walk_left", 2, 0, 3)
+            this.animate("walk_left", 2, 0, 3)
                 .animate("walk_right", 0, 0, 1)
                 .stop().animate("walk_right", 20, -1)
 
@@ -151,6 +164,7 @@ $(document).ready(function () {
                 });
 
             this.life(10);
+
 
             // A rudimentary way to prevent the user from passing solid areas
             this.bind('Moved',
@@ -206,35 +220,6 @@ $(document).ready(function () {
         }
     });
 
-    Crafty.c('Laser', {
-        _speedX:8,
-        _speedY:7,
-        init:function () {
-            this.requires("2D, DOM, SpriteAnimation, laserBeam, Collision, Life");
-            this.life(5);
-            this.crop(0, 0, 32, 6);
-        },
-        start:function (direction, shooter) {
-//            Crafty.audio.play("laser");
-            this.bind('EnterFrame', function () {
-                var change = direction === "right" ? this._speedX : -1 * this._speedX;
-                this.attr({x:this.x + change, y:this.y + this._speedY});
-                var laser = this;
-
-                $.each(this.hit("Life"), function (index, value) {
-                    if (value.obj !== shooter) {
-                        value.obj.punch(1);
-                        laser.punch(1);
-                    }
-                });
-
-                if (this.hit("ground") || this._life <= 0 || this.x > config.width || (this.x + this.w) < 0) {
-                    this.destroy();
-                }
-            });
-        }
-    });
-
 
     Crafty.c('LaserShooter', {
         _key:Crafty.keys.SPACE,
@@ -250,7 +235,7 @@ $(document).ready(function () {
                 var laser = Crafty.e('Laser');
                 var x = ((shooter.w - laser.w) / 2) + shooter.x;
                 laser.attr({z:shooter.z, 'x':x, y:shooter.y + 21});
-                laser.start(this._direction, shooter);
+                laser.shoot(shooter, this._direction);
             });
 
             //change direction when a direction change event is received
@@ -267,7 +252,13 @@ $(document).ready(function () {
 
     Crafty.c('Life', {
         _life:1,
-        punch:function (power) {
+        _cost:1,
+        _power:1,
+        attack:function (other) {
+            other.hurt(this._power);
+            this.hurt(other.cost());
+        },
+        hurt:function (power) {
             if (power === undefined) {
                 power = 1;
             }
@@ -281,6 +272,18 @@ $(document).ready(function () {
                 this._life = life;
             }
             return this._life;
+        },
+        cost:function (cost) {
+            if (cost !== undefined) {
+                this._cost = cost;
+            }
+            return this._cost;
+        },
+        power:function (power) {
+            if (power !== undefined) {
+                this._power = power;
+            }
+            return this._power;
         }
     });
 
@@ -295,14 +298,124 @@ $(document).ready(function () {
         }
     });
 
+    Crafty.c('Tank', {
+        init:function () {
+            this.requires("2D, DOM, SpriteAnimation, tank, Collision, Life, Expires");
+            this.life(2);
+            this.cost(5);
+        }
+    });
+
     Crafty.c('Dude', {
         init:function () {
             this.requires("2D, DOM, SpriteAnimation, dude, Collision, Life, Expires");
         }
     });
 
+    Crafty.c('Bullet', {
+        init:function () {
+            this.requires("tankBullet, Projectile");
+            this.crop(0, 9, 20, 20);
+            this.life(5);
+        },
+        shoot:function (shooter, target) {
+            this.shootTarget(shooter, target, 4);
+        }
+    });
+
+    Crafty.c('Laser', {
+        _speedX:8,
+        _speedY:-7,
+        init:function () {
+            this.requires("laserBeam, Projectile");
+            this.life(5);
+            this.crop(0, 0, 32, 6);
+        },
+        shoot:function (shooter, direction) {
+//            Crafty.audio.play("laser");
+            this.shootDirection(shooter, direction, this._speedX, this._speedY);
+        }
+    });
+
+    Crafty.c('Projectile', {
+        init:function () {
+            this.requires("2D, DOM, SpriteAnimation, Collision, Life, Attached");
+        },
+        shootDirection:function (shooter, direction, speedX, speedY) {
+            if (direction === "right") {
+                speedX *= -1;
+            }
+            this.start(speedX, speedY, shooter);
+        },
+        shootTarget:function (shooter, target, speed) {
+            var x = target.x - shooter.x;
+            var y = target.y - shooter.y;
+            var speedY = speed;
+
+            var time = y / speedY;
+            var speedX = x / time;
+
+            this.start(speedX, speedY, shooter);
+        },
+        start:function (speedX, speedY, shooter) {
+            var projectile = this;
+            this.bind('EnterFrame', function () {
+                this.attr({'x':this.x - speedX, 'y':this.y - speedY});
+
+                $.each(this.hit("Life"), function (index, value) {
+                    if (value.obj !== shooter) {
+                        projectile.attack(value.obj);
+                        if (projectile.life() <= 0) {
+                            return false;
+                        }
+                    }
+                });
+
+                if (this.hit("ground") || this._life <= 0 || this.x > config.width || (this.x + this.w) < 0) {
+                    this.destroy();
+                }
+
+            });
+        }
+
+    });
+
+    Crafty.c("TankAI", {
+        _direction:"right",
+        _minimumMovement:100,
+        _directionMovement:0,
+        init:function () {
+            this.bind('EnterFrame', function () {
+                if ((this.x + (this.w / 2)) < (config.player.x + (config.player.w / 2))) {
+                    this.changeDirection("right");
+                } else {
+                    this.changeDirection("left");
+                }
+                var movement = this._direction === "right" ? 2 : -2;
+                this.attr({x:this.x + movement});
+                if (this.hit('Tank')) {
+                    this.attr({x:this.x - movement});
+                } else {
+                    this._directionMovement += Crafty.math.abs(movement);
+                }
+
+                if (Crafty.math.randomInt(1, 150) % 150 == 0) {
+                    var b = Crafty.e('Bullet');
+                    var x = ((this.w - this.w) / 2) + this.x;
+                    b.attr({z:this.z, 'x':x, y:this.y});
+                    b.shoot(this, config.player);
+                }
+            });
+        },
+        changeDirection:function (newDirection) {
+            if (newDirection != this._direction && this._directionMovement >= this._minimumMovement) {
+                this._directionMovement = 0;
+                this._direction = newDirection;
+            }
+        }
+    });
+
     Crafty.c("ScaredAI", {
-        _relative:undefined,
         _direction:"right",
         init:function () {
             this.bind('EnterFrame', function () {
@@ -340,7 +453,8 @@ $(document).ready(function () {
             .css({ "text-align":"center", "color":"white" });
 
         //load takes an array of assets and a callback when complete
-        Crafty.load(["images/robot.png", "images/ground.png", "images/building.png", "images/laser.png", "images/people.png"], function () {
+        Crafty.load(["images/robot.png", "images/ground.png", "images/building.png", "images/laser.png",
+            "images/people.png", "images/tank.png"], function () {
             Crafty.scene("main"); //when everything is loaded, run the main scene
         });
     });
