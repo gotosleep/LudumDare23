@@ -105,8 +105,14 @@ $(document).ready(function () {
         }
     });
 
-    Crafty.c('Ape', {
-        Ape:function () {
+    Crafty.c('Robo', {
+        _hoverOffset:0,
+        _hoverDirection:"up",
+        _hoverMax:15,
+        _resting: undefined,
+        _keysDown:0,
+        Robo:function () {
+            this._resting = this.y;
             //setup animations
             this.requires("SpriteAnimation, Collision")
                 .animate("walk", 0, 0, 1).stop().animate("walk", 20, -1);
@@ -142,10 +148,45 @@ $(document).ready(function () {
                     } else if (this.x < config.maxLeft) {
                         this.attr({x:config.maxLeft});
                     }
-
+                    this._resting = this.y;
                 }).onHit("fire", function () {
                     this.destroy();
                 });
+
+            this.bind('KeyDown', function (e) {
+                if (e.key === Crafty.keys.UP_ARROW || e.key === Crafty.keys.DOWN_ARROW ||
+                    e.key === Crafty.keys.RIGHT_ARROW || e.key === Crafty.keys.LEFT_ARROW) {
+                    this._keysDown += 1;
+                }
+            });
+
+            this.bind('KeyUp', function (e) {
+                if (e.key === Crafty.keys.UP_ARROW || e.key === Crafty.keys.DOWN_ARROW ||
+                    e.key === Crafty.keys.RIGHT_ARROW || e.key === Crafty.keys.LEFT_ARROW) {
+                    this._keysDown -= 1;
+                }
+            });
+
+            this.bind('EnterFrame', function () {
+                if (this._keysDown > 0 || this._resting === undefined) {
+                    return;
+                }
+                if (this._hoverDirection === "up") {
+                    this._hoverOffset -= 1;
+                    if (this._hoverOffset < (-1 * this._hoverMax)) {
+                        this._hoverDirection = "down";
+                    }
+                } else {
+                    this._hoverOffset += 1;
+                    if (this._hoverOffset > (this._hoverMax)) {
+                        this._hoverDirection = "up";
+                    }
+                }
+                if (this._hoverOffset % 3) {
+                    this.attr({y:this._resting + (this._hoverOffset / 3)});
+                }
+            });
+
             return this;
         }
     });
@@ -242,10 +283,10 @@ $(document).ready(function () {
         Generator.ground(config.width);
         Crafty.background("#FFF");
 
-        var player = Crafty.e("2D, DOM, Ape, robot, RightControls, SpriteAnimation, Collision, LaserShooter, Grid")
+        var player = Crafty.e("2D, DOM, Robo, robot, RightControls, SpriteAnimation, Collision, LaserShooter, Grid")
             .attr({ x:150, y:150, z:2 })
             .rightControls(4)
-            .Ape();
+            .Robo();
 
     });
 
