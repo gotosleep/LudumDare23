@@ -7241,7 +7241,7 @@ Crafty.storage = (function () {
 
 			getAllKeys: function (type, callback) {
 				if (db == null) {
-					setTimeout(function () { Crafty.storage.getAllkeys(type, callback); }, 1);
+					setTimeout(function () { Crafty.storage.getAllKeys(type, callback); }, 1);
 				}
 				try {
 					var trans = db.transaction([type], IDBTransaction.READ),

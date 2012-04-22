@@ -48,6 +48,10 @@ $(document).ready(function () {
         tankBullet:[0, 1]
     });
 
+    Crafty.sprite(32, 27, "images/plane.png", {
+        plane:[0, 0]
+    });
+
     Crafty.sprite(32, "images/laser.png", {
         laserBeam:[0, 0],
         explosion:[1, 0]
@@ -71,6 +75,8 @@ $(document).ready(function () {
     });
 
     Crafty.c('Generator', {
+        _enemyCount:0,
+        _maxEnemies:1,
         groundProgress:0,
         buildingProgress:0,
         init:function () {
@@ -80,8 +86,19 @@ $(document).ready(function () {
                 this.ground(config.width + 100);
                 this.building1();
                 this.dude();
-                this.tank();
-            });
+                if (this._enemyCount < this._maxEnemies) {
+                    this.tank();
+                    this.plane();
+                }
+            })
+                .bind("ScoreUpdate", function () {
+                    var max = parseInt((config.points / (this._maxEnemies * 500))) + 1;
+                    if (max > this._maxEnemies) {
+                        this._maxEnemies = max;
+                        console.log("max: " + this._maxEnemies);
+                    }
+                });
+
         },
         ground:function (x) {
             while (this.groundProgress < x) {
@@ -132,11 +149,37 @@ $(document).ready(function () {
         tank:function () {
             if (Crafty.math.randomInt(1, 40) % 40 == 0) {
                 var tank = Crafty.e("Tank, Attached, enemy, TankAI");
-                tank.attr({ 'x':config.width, y:config.height - tank.h - 16, 'z':3});
+                tank.points(100)
+                    .attr({ 'x':config.width, y:config.height - tank.h - 16, 'z':3});
                 if (tank.hit('Tank')) {
                     tank.destroy();
+                } else {
+                    this.addEnemy(tank);
                 }
             }
+        },
+        plane:function () {
+            if (Crafty.math.randomInt(1, 100) % 100 == 0) {
+                var plane = Crafty.e("Plane, enemy, PlaneAI")
+                    .points(250);
+                if (Crafty.math.randomInt(1, 2) % 2 === 0) {
+                    plane.attr({x:config.width, y:10, z:4});
+                } else {
+                    plane.attr({x:0, y:10, z:4});
+                }
+                if (plane.hit('Plane')) {
+                    plane.destroy();
+                } else {
+                    this.addEnemy(plane);
+                }
+            }
+        },
+        addEnemy:function (enemy) {
+            this._enemyCount += 1;
+            var generator = this;
+            enemy.bind("Remove", function () {
+                generator._enemyCount -= 1;
+            });
         }
     });
 
@@ -166,7 +209,7 @@ $(document).ready(function () {
                     }
                 });
 
-            this.life(50);
+            this.life(15);
 
             this.bind("KeyDown",
                 function (e) {
@@ -191,6 +234,9 @@ $(document).ready(function () {
                         this.attr({x:config.maxRight});
                     } else if (this.x < config.maxLeft) {
                         this.attr({x:config.maxLeft});
+                    }
+                    if (this.y < 0) {
+                        this.attr({y:from.y});
                     }
                     if (this.y - from.y !== 0) {
                         this._resting = this.y;
@@ -302,6 +348,7 @@ $(document).ready(function () {
     });
 
     Crafty.c('Life', {
+        _points:10,
         _maxLife:1,
         _life:1,
         _cost:1,
@@ -327,22 +374,33 @@ $(document).ready(function () {
             if (life) {
                 this._maxLife = life;
                 this._life = life;
+                return this;
             }
             return this._life;
         },
         cost:function (cost) {
             if (cost !== undefined) {
                 this._cost = cost;
+                return this;
             }
             return this._cost;
         },
         power:function (power) {
             if (power !== undefined) {
                 this._power = power;
+                return this;
             }
             return this._power;
         },
+        points:function (value) {
+            if (value !== undefined) {
+                this._points = value;
+                return this;
+            }
+            return this._points;
+        },
         die:function () {
+            Crafty.trigger("ScoreUpdate", {points:this._points});
             this.trigger("Died");
             Crafty.e("Explosion")
                 .explode(this);
@@ -385,23 +443,35 @@ $(document).ready(function () {
         }
     });
 
+    Crafty.c("NPC", {
+        init:function () {
+            this.requires("2D, DOM, SpriteAnimation, Collision, Life, Expires");
+        }
+    });
+
     Crafty.c('Tank', {
         init:function () {
-            this.requires("2D, DOM, SpriteAnimation, tank, Collision, Life, Expires");
+            this.requires("NPC, tank");
             this.life(2);
             this.cost(5);
         }
     });
 
+    Crafty.c("Plane", {
+        init:function () {
+            this.requires("NPC, plane");
+        }
+    });
+
     Crafty.c('Dude', {
         init:function () {
-            this.requires("2D, DOM, SpriteAnimation, dude, Collision, Life, Expires");
+            this.requires("NPC, dude");
         }
     });
 
     Crafty.c('Bullet', {
         init:function () {
-            this.requires("tankBullet, Projectile, Attached");
+            this.requires("tankBullet, Projectile");
             this.crop(0, 9, 20, 20);
             this.life(5);
         },
@@ -414,7 +484,7 @@ $(document).ready(function () {
         _speedX:9,
         _speedY:-7,
         init:function () {
-            this.requires("laserBeam, Projectile, Attached");
+            this.requires("laserBeam, Projectile");
             this.life(5);
             this.crop(0, 0, 32, 6);
         },
@@ -501,6 +571,8 @@ $(document).ready(function () {
     });
 
     Crafty.c("BaseAI", {
+        _firing:false,
+        _ready:false,
         _direction:"right",
         _minimumMovement:100,
         _directionMovement:0,
@@ -512,8 +584,69 @@ $(document).ready(function () {
         }
     });
 
+    Crafty.c("PlaneAI", {
+        init:function () {
+            this.requires("BaseAI, Delay")
+                .animate("fire", 1, 0, 2)
+                .animate("normal", 0, 0, 0)
+                .bind('EnterFrame', function () {
+                    var movement = {x:0, y:0};
+                    if (this.x > config.width - 100) {
+                        this._direction = "left";
+                    } else if (this.x < 100) {
+                        this._direction = "right";
+                    } else if (this.y > config.height - 100) {
+                        this._direction = "up";
+                    } else if (this.y < 100) {
+                        this._direction = "down";
+                    }
+
+                    if (this._direction === "left") {
+                        movement.x = -2;
+                    } else if (this._direction === "right") {
+                        movement.x = 2;
+                    } else if (this._direction === "up") {
+                        movement.y = -2;
+                    } else if (this._direction === "down") {
+                        movement.y = 2;
+                    }
+
+                    this.attr({x:this.x + movement.x, y:this.y + movement.y});
+                    if (this.hit('Plane')) {
+                        this.attr({x:this.x - movement.x, y:this.y - movement.y});
+                    }
+
+                    if (this._firing === false) {
+                        if (Crafty.math.randomInt(1, 50) % 50 == 0) {
+                            this.fire();
+                        }
+                    } else if (this._ready && this.y >= config.player.y && (this.y + this.h) <= (config.player.y + config.player.h)) {
+                        this.animate("normal", 100000, -1);
+                        this._firing = false;
+                        var b = Crafty.e('Bullet');
+                        var x = ((this.w - this.w) / 2) + this.x;
+                        b.attr({z:this.z, 'x':x, y:this.y});
+                        b.targetType("Robo");
+                        var direction = config.player.x < this.x ? "left" : "right";
+                        if (direction == "left") {
+                            b.addComponent("Attached");
+                        }
+                        b.shootDirection(this, direction, 5, 5);
+                    }
+                });
+        },
+        fire:function () {
+            this._firing = true;
+            this._ready = false;
+            this.stop().animate("fire", 75, 0).bind("AnimationEnd", function () {
+                this._ready = true;
+//                this.delay(function () {
+//                }, 750);
+            });
+        }
+    });
+
     Crafty.c("TankAI", {
-        _firing:false,
         init:function () {
             this.requires("BaseAI, Delay")
                 .animate("fire", 1, 0, 3)
@@ -547,7 +680,7 @@ $(document).ready(function () {
                     this.delay(function () {
                         this.animate("normal", 100000, -1);
                         this._firing = false;
-                        var b = Crafty.e('Bullet');
+                        var b = Crafty.e('Bullet, Attached');
                         var x = ((this.w - this.w) / 2) + this.x;
                         b.attr({z:this.z, 'x':x, y:this.y});
                         b.targetType("Robo");
@@ -624,7 +757,7 @@ $(document).ready(function () {
 
         //load takes an array of assets and a callback when complete
         Crafty.load(["images/robot.png", "images/ground.png", "images/building.png", "images/laser.png",
-            "images/people.png", "images/tank.png", "images/title.png"], function () {
+            "images/people.png", "images/tank.png", "images/title.png", "images/plane.png"], function () {
             Crafty.scene("instructions"); //when everything is loaded, run the main scene
         });
     });
@@ -658,10 +791,14 @@ $(document).ready(function () {
 
     Crafty.scene("gameOver", function () {
 
+        if (config.high === undefined || config.high < config.points) {
+            config.high = config.points;
+        }
+
         var css = { "text-align":"center", "color":"white", "font-weight":"bold", "font-size":"xx-large"};
 
         Crafty.background("#000");
-        Crafty.e("2D, DOM, Text").attr({ w:config.width, h:35, x:0, y:100 })
+        Crafty.e("2D, DOM, Text").attr({ w:config.width, h:35, x:0, y:75 })
             .text("GAME OVER")
             .css(css);
 
@@ -676,9 +813,20 @@ $(document).ready(function () {
             }
         });
 
+        css = { "text-align":"center", "color":"white", "font-weight":"bold", "font-size":"large"};
+
+        Crafty.e("2D, DOM, Text").attr({ w:config.width, h:35, x:0, y:150 })
+            .text("Score: " + config.points)
+            .css(css);
+        Crafty.e("2D, DOM, Text").attr({ w:config.width, h:35, x:0, y:185 })
+            .text("High: " + config.high)
+            .css(css);
+
     });
 
     Crafty.scene("main", function () {
+
+        config.points = 0;
 
         var Generator = Crafty.e("Generator, 2D");
         Generator.ground(config.width);
@@ -688,6 +836,14 @@ $(document).ready(function () {
         var health = Crafty.e("2D, DOM, Text").attr({ w:150, h:35, x:config.width - 150, y:10 })
             .text("Health: " + "100 %")
             .css(css);
+
+        var score = Crafty.e("2D, DOM, Text").attr({ w:config.width, h:35, x:20, y:10 })
+            .text("Score: " + "0")
+            .css(css)
+            .bind("ScoreUpdate", function (data) {
+                config.points += data.points;
+                score.text("Score: " + config.points);
+            });
 
         config.player = Crafty.e("2D, DOM, Robo, robot, RightControls, SpriteAnimation, Collision, LaserShooter, Grid")
             .attr({ x:150, y:125, z:2 })
