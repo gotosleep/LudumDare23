@@ -219,6 +219,9 @@ $(document).ready(function () {
                         target.toggleAttach(false);
                         target.stopAI();
                         target.antigravity();
+                        target.bind("Remove", function () {
+                            beam._removeFood(target);
+                        });
                         beam.attach(target);
                         beam._people.push(target);
                     }
@@ -254,14 +257,20 @@ $(document).ready(function () {
             this._owner = owner;
             return this;
         },
+        _removeFood:function (food) {
+            var index = this._people.indexOf(food);
+            if (index >= 0) {
+                this._people.splice(index, 1);
+            }
+        },
         eat:function (food) {
             if (this._owner) {
                 this._owner.heal();
             }
 
-            this._people.splice(this._people.indexOf(food), 1);
-            Crafty.trigger("ScoreUpdate", {points:food.points()});
+            this._removeFood(food);
 
+            Crafty.trigger("ScoreUpdate", {points:food.points()});
             food.destroy();
         },
         release:function () {
@@ -269,7 +278,7 @@ $(document).ready(function () {
             this._people = [];
             this.detach();
             $.each(iter, function (index, food) {
-                if (food.has("beaming") && food.has("2D")) {
+                if (food.has("beaming")) {
                     food.removeComponent("beaming");
                     food.addComponent("food");
                     food.startAI();
