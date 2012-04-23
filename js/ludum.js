@@ -269,7 +269,7 @@ $(document).ready(function () {
             this._people = [];
             this.detach();
             $.each(iter, function (index, food) {
-                if (food.has("beaming")) {
+                if (food.has("beaming") && food.has("2D")) {
                     food.removeComponent("beaming");
                     food.addComponent("food");
                     food.startAI();
