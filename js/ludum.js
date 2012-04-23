@@ -23,6 +23,14 @@ $(document).ready(function () {
         robot:[0, 0]
     });
 
+    Crafty.sprite(40, 100, "images/beam.png", {
+        beam:[0, 0]
+    });
+
+    Crafty.sprite(1400, 400, "images/stage1.png", {
+        stage1:[0, 0]
+    });
+
     Crafty.sprite(16, "images/ground.png", {
         grass1:[0, 0],
         grass2:[1, 0],
@@ -64,13 +72,20 @@ $(document).ready(function () {
     });
 
     Crafty.c('Attached', {
+        _toggle:true,
         init:function () {
             this.bind('WorldMoved', function (movement) {
-                this.attr({x:this.x - movement.x});
-                if (this.x + this.w <= 0) {
-                    this.destroy();
+                if (this._toggle) {
+                    this.attr({x:this.x - movement.x});
+                    if (this.x + this.w <= 0) {
+                        this.destroy();
+                    }
                 }
             });
+        },
+        toggleAttach:function (toggle) {
+            this._toggle = toggle;
+            return this;
         }
     });
 
@@ -95,7 +110,6 @@ $(document).ready(function () {
                     var max = parseInt((config.points / (this._maxEnemies * 500))) + 1;
                     if (max > this._maxEnemies) {
                         this._maxEnemies = max;
-                        console.log("max: " + this._maxEnemies);
                     }
                 });
 
@@ -117,7 +131,7 @@ $(document).ready(function () {
                 if (Crafty.math.randomInt(1, 2) % 2 == 0) {
                     var height = Crafty.math.randomInt(2, 5);
                     var placement = config.height - 16 - (this.building1Height * height);
-                    var z = Crafty.math.randomInt(1, 2);
+                    var z = 1;
 
                     for (var x = 0; x < width; ++x) {
                         for (var y = 0; y < height; ++y) {
@@ -142,8 +156,9 @@ $(document).ready(function () {
         },
         dude:function () {
             if (Crafty.math.randomInt(1, 20) % 20 == 0) {
-                Crafty.e("Dude, Attached, enemy, ScaredAI")
-                    .attr({ 'x':config.width, y:config.height - 32, 'z':4});
+                Crafty.e("Dude, Attached, enemy, food, ScaredAI, Gravity")
+                    .attr({ 'x':config.width, y:config.height - 32, 'z':4})
+                    .gravity("solid");
             }
         },
         tank:function () {
@@ -183,12 +198,73 @@ $(document).ready(function () {
         }
     });
 
+    Crafty.c("Abduct", {
+        _owner:undefined,
+        _people:[],
+        init:function () {
+            this.requires("2D, DOM, Collision, SpriteAnimation, beam");
+            var beam = this;
+            this.bind("EnterFrame", function () {
+                $.each(this.hit("food"), function (index, value) {
+                    var target = value.obj;
+                    target.removeComponent("food");
+                    target.toggleAttach(false);
+                    target.unbind("WorldMoved");
+                    target.stopAI();
+                    target.antigravity();
+                    beam.attach(target);
+                    beam._people.push(target);
+                });
+                var center = this.x + (this.w / 2) - 10;
+
+                var iter = [].concat(this._people);
+                $.each(iter, function (index, food) {
+                    var diff = food.x - center;
+                    if (diff > 2) {
+                        food.attr({x:food.x - 1});
+                    } else if (diff < 2) {
+                        food.attr({x:food.x + 1});
+                    }
+                    if (food.y > beam.y) {
+                        food.attr({y:food.y - 1});
+                    } else {
+                        beam.eat(food);
+                    }
+                });
+            });
+        },
+        owner:function (owner) {
+            this._owner = owner;
+            return this;
+        },
+        eat:function (food) {
+            if (this._owner) {
+                this._owner.heal();
+            }
+            this._people.splice(this._people.indexOf(food), 1);
+            food.destroy();
+        },
+        release:function () {
+            var beam = this;
+            $.each(this._people, function (index, food) {
+                food.addComponent("food");
+                food.startAI();
+                food.gravity();
+                food.toggleAttach(true);
+                beam.detach(food);
+            });
+            this._people = [];
+        }
+    });
+
     Crafty.c('Robo', {
         _hoverOffset:0,
         _hoverDirection:"up",
         _hoverMax:15,
         _resting:undefined,
         _hovering:true,
+        _abduct:undefined,
+        _shouldRelease:false,
         Robo:function () {
             this.requires("SpriteAnimation, Collision, Life");
             this._resting = this.y;
@@ -215,10 +291,14 @@ $(document).ready(function () {
                 function (e) {
                     if (e.key === Crafty.keys.UP_ARROW || Crafty.keys === Crafty.keys.DOWN_ARROW) {
                         this._hovering = false;
+                    } else if (e.key == Crafty.keys.SPACE) {
+                        this.abduct(true);
                     }
                 }).bind("KeyUp", function (e) {
                     if (e.key === Crafty.keys.UP_ARROW || Crafty.keys === Crafty.keys.DOWN_ARROW) {
                         this._hovering = !Crafty.keydown[Crafty.keys.UP_ARROW] && !Crafty.keydown[Crafty.keys.DOWN_ARROW];
+                    } else if (e.key == Crafty.keys.SPACE) {
+                        this.abduct(false);
                     }
                 });
 
@@ -246,6 +326,13 @@ $(document).ready(function () {
                 });
 
             this.bind('EnterFrame', function () {
+                if (this._shouldRelease) {
+                    this._shouldRelease = false;
+                    this._abduct.release();
+                    this._abduct.destroy();
+                    this._abduct = undefined;
+                }
+
                 if (!this._hovering || this._resting === undefined) {
                     return;
                 }
@@ -296,6 +383,16 @@ $(document).ready(function () {
             });
 
             return this;
+        },
+        abduct:function (show) {
+            if (show && !this._abduct) {
+                this._abduct = Crafty.e("Abduct");
+                this._abduct.owner(this);
+                this._abduct.attr({z:this.z, x:this.x + 12, y:this.y + this.h - 20});
+                this.attach(this._abduct);
+            } else if (!show && this._abduct) {
+                this._shouldRelease = true;
+            }
         }
     });
 
@@ -327,7 +424,7 @@ $(document).ready(function () {
             } else if (Crafty.keydown[Crafty.keys.S]) {
                 direction += "down";
             }
-            if (direction !== "") {
+            if (direction !== "" && !Crafty.keydown[Crafty.keys.SPACE]) {
                 this._direction = direction;
                 this.fire();
             }
@@ -364,11 +461,25 @@ $(document).ready(function () {
                 power = 1;
             }
             this._life -= power;
-            this.trigger("Hurt", {current:this._life, max:this._maxLife, percent:((this._life / this._maxLife) * 100) });
-
+            this._notify();
             if (this._life <= 0) {
                 this.die();
             }
+        },
+        _notify:function () {
+            this.trigger("Health", {current:this._life, max:this._maxLife, percent:((this._life / this._maxLife) * 100) });
+        },
+        heal:function (amount) {
+            if (!amount) {
+                amount = 1;
+            }
+            if (this._life < this._maxLife) {
+                this._life += amount;
+            }
+            if (this._life > this._maxLife) {
+                this._life = this._maxLife;
+            }
+            this._notify();
         },
         life:function (life) {
             if (life) {
@@ -640,8 +751,6 @@ $(document).ready(function () {
             this._ready = false;
             this.stop().animate("fire", 75, 0).bind("AnimationEnd", function () {
                 this._ready = true;
-//                this.delay(function () {
-//                }, 750);
             });
         }
     });
@@ -694,6 +803,10 @@ $(document).ready(function () {
     Crafty.c("ScaredAI", {
         init:function () {
             this.requires("BaseAI");
+            this._minimumMovement = 200;
+            this.startAI();
+        },
+        startAI:function () {
             this.bind('EnterFrame', function () {
                 if ((this.x >= 0 && (this.x + (this.w / 2)) < (config.player.x + (config.player.w / 2)))
                     || this.x >= config.width) {
@@ -706,6 +819,9 @@ $(document).ready(function () {
 
                 this.attr({x:this.x + movement});
             });
+        },
+        stopAI:function () {
+            this.unbind('EnterFrame');
         }
     });
 
@@ -745,6 +861,21 @@ $(document).ready(function () {
         })
     });
 
+    Crafty.c("Background", {
+        _movement:0,
+        _threshold:(config.width / 10),
+        init:function () {
+            this.requires("2D, Canvas")
+            this.bind("WorldMoved", function (movement) {
+                this._movement += movement.x;
+                if (this._movement > this._threshold) {
+                    this._movement = 0;
+                    this.attr({x:this.x - 1});
+                }
+            });
+        }
+    });
+
     //SCENES
 
     //the loading screen that will display while our assets load
@@ -757,7 +888,8 @@ $(document).ready(function () {
 
         //load takes an array of assets and a callback when complete
         Crafty.load(["images/robot.png", "images/ground.png", "images/building.png", "images/laser.png",
-            "images/people.png", "images/tank.png", "images/title.png", "images/plane.png"], function () {
+            "images/people.png", "images/tank.png", "images/title.png", "images/plane.png",
+            "images/stage1.png", "images/beam.png"], function () {
             Crafty.scene("instructions"); //when everything is loaded, run the main scene
         });
     });
@@ -773,9 +905,12 @@ $(document).ready(function () {
         Crafty.e("2D, DOM, Text").attr({ w:config.width - 300, h:40, x:300, y:0 })
             .text("Movement: left, right, up, down")
             .css(css);
-        Crafty.e("2D, DOM, Text").attr({ w:config.width - 300, h:35, x:300, y:40 })
+        Crafty.e("2D, DOM, Text").attr({ w:config.width - 300, h:40, x:300, y:40 })
             .text("Fire Weapon: a, d, w, s")
             .css(css);
+        Crafty.e("2D, DOM, Text").attr({ w:config.width - 300, h:40, x:300, y:80 })
+                    .text("Abduct: space")
+                    .css(css);
 
         var proceed = Crafty.e("2D, DOM, Text, BlinkingText").attr({ w:config.width - 180, h:20, x:180, y:config.height - 50 })
             .text("Press Enter to continue")
@@ -825,12 +960,14 @@ $(document).ready(function () {
     });
 
     Crafty.scene("main", function () {
-
         config.points = 0;
 
         var Generator = Crafty.e("Generator, 2D");
         Generator.ground(config.width);
         Crafty.background("#FFF");
+
+        var background = Crafty.e("Background, stage1");
+
 
         var css = { "text-align":"left", "color":"black", "font-weight":"bold", "font-size":"large"};
         var health = Crafty.e("2D, DOM, Text").attr({ w:150, h:35, x:config.width - 150, y:10 })
@@ -848,9 +985,10 @@ $(document).ready(function () {
         config.player = Crafty.e("2D, DOM, Robo, robot, RightControls, SpriteAnimation, Collision, LaserShooter, Grid")
             .attr({ x:150, y:125, z:2 })
             .rightControls({x:6, y:5})
-            .Robo().bind("Hurt", function (data) {
+            .Robo().bind("Health", function (data) {
                 health.text("Health: " + parseInt(data.percent) + "%");
             });
+
 
     });
 
