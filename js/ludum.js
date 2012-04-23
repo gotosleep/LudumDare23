@@ -201,19 +201,27 @@ $(document).ready(function () {
     Crafty.c("Abduct", {
         _owner:undefined,
         _people:[],
+        _on:false,
         init:function () {
             this.requires("2D, DOM, Collision, SpriteAnimation, beam");
-            var beam = this;
+            this.attr({visible:false});
             this.bind("EnterFrame", function () {
+                if (this._on === false) {
+                    return;
+                }
+                var beam = this;
+
                 $.each(this.hit("food"), function (index, value) {
                     var target = value.obj;
-                    target.removeComponent("food");
-                    target.toggleAttach(false);
-                    target.unbind("WorldMoved");
-                    target.stopAI();
-                    target.antigravity();
-                    beam.attach(target);
-                    beam._people.push(target);
+                    if (beam._people.indexOf(target) === -1) {
+                        target.addComponent("beaming");
+                        target.removeComponent("food");
+                        target.toggleAttach(false);
+                        target.stopAI();
+                        target.antigravity();
+                        beam.attach(target);
+                        beam._people.push(target);
+                    }
                 });
                 var center = this.x + (this.w / 2) - 10;
 
@@ -233,6 +241,15 @@ $(document).ready(function () {
                 });
             });
         },
+        toggle:function (toggle) {
+            if (toggle !== this._on) {
+                this.attr({visible:toggle});
+                this._on = toggle;
+                if (!this._on) {
+                    this.release();
+                }
+            }
+        },
         owner:function (owner) {
             this._owner = owner;
             return this;
@@ -241,19 +258,25 @@ $(document).ready(function () {
             if (this._owner) {
                 this._owner.heal();
             }
+
             this._people.splice(this._people.indexOf(food), 1);
+            Crafty.trigger("ScoreUpdate", {points:food.points()});
+
             food.destroy();
         },
         release:function () {
-            var beam = this;
-            $.each(this._people, function (index, food) {
-                food.addComponent("food");
-                food.startAI();
-                food.gravity();
-                food.toggleAttach(true);
-                beam.detach(food);
-            });
+            var iter = [].concat(this._people);
             this._people = [];
+            this.detach();
+            $.each(iter, function (index, food) {
+                if (food.has("beaming")) {
+                    food.removeComponent("beaming");
+                    food.addComponent("food");
+                    food.startAI();
+                    food.gravity();
+                    food.toggleAttach(true);
+                }
+            });
         }
     });
 
@@ -264,7 +287,6 @@ $(document).ready(function () {
         _resting:undefined,
         _hovering:true,
         _abduct:undefined,
-        _shouldRelease:false,
         Robo:function () {
             this.requires("SpriteAnimation, Collision, Life");
             this._resting = this.y;
@@ -286,6 +308,11 @@ $(document).ready(function () {
                 });
 
             this.life(15);
+
+            this._abduct = Crafty.e("Abduct");
+            this._abduct.owner(this);
+            this._abduct.attr({z:this.z, x:this.x + 12, y:this.y + this.h - 20});
+            this.attach(this._abduct);
 
             this.bind("KeyDown",
                 function (e) {
@@ -326,13 +353,6 @@ $(document).ready(function () {
                 });
 
             this.bind('EnterFrame', function () {
-                if (this._shouldRelease) {
-                    this._shouldRelease = false;
-                    this._abduct.release();
-                    this._abduct.destroy();
-                    this._abduct = undefined;
-                }
-
                 if (!this._hovering || this._resting === undefined) {
                     return;
                 }
@@ -385,14 +405,7 @@ $(document).ready(function () {
             return this;
         },
         abduct:function (show) {
-            if (show && !this._abduct) {
-                this._abduct = Crafty.e("Abduct");
-                this._abduct.owner(this);
-                this._abduct.attr({z:this.z, x:this.x + 12, y:this.y + this.h - 20});
-                this.attach(this._abduct);
-            } else if (!show && this._abduct) {
-                this._shouldRelease = true;
-            }
+            this._abduct.toggle(show);
         }
     });
 
@@ -801,27 +814,30 @@ $(document).ready(function () {
     });
 
     Crafty.c("ScaredAI", {
+        _aiEnabled:true,
         init:function () {
             this.requires("BaseAI");
             this._minimumMovement = 200;
-            this.startAI();
-        },
-        startAI:function () {
             this.bind('EnterFrame', function () {
-                if ((this.x >= 0 && (this.x + (this.w / 2)) < (config.player.x + (config.player.w / 2)))
-                    || this.x >= config.width) {
-                    this.changeDirection("left");
-                } else {
-                    this.changeDirection("right");
-                }
-                var movement = this._direction === "right" ? 1 : -1;
-                this._directionMovement += Crafty.math.abs(movement);
+                if (this._aiEnabled) {
+                    if ((this.x >= 0 && (this.x + (this.w / 2)) < (config.player.x + (config.player.w / 2)))
+                        || this.x >= config.width) {
+                        this.changeDirection("left");
+                    } else {
+                        this.changeDirection("right");
+                    }
+                    var movement = this._direction === "right" ? 1 : -1;
+                    this._directionMovement += Crafty.math.abs(movement);
 
-                this.attr({x:this.x + movement});
+                    this.attr({x:this.x + movement});
+                }
             });
         },
+        startAI:function () {
+            this._aiEnabled = true;
+        },
         stopAI:function () {
-            this.unbind('EnterFrame');
+            this._aiEnabled = false;
         }
     });
 
@@ -909,8 +925,8 @@ $(document).ready(function () {
             .text("Fire Weapon: a, d, w, s")
             .css(css);
         Crafty.e("2D, DOM, Text").attr({ w:config.width - 300, h:40, x:300, y:80 })
-                    .text("Abduct: space")
-                    .css(css);
+            .text("Abduct: space")
+            .css(css);
 
         var proceed = Crafty.e("2D, DOM, Text, BlinkingText").attr({ w:config.width - 180, h:20, x:180, y:config.height - 50 })
             .text("Press Enter to continue")
