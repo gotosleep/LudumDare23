@@ -158,7 +158,7 @@ $(document).ready(function () {
             if (Crafty.math.randomInt(1, 20) % 20 == 0) {
                 Crafty.e("Dude, Attached, enemy, food, ScaredAI, Gravity")
                     .attr({ 'x':config.width, y:config.height - 32, 'z':4})
-                    .gravity("solid");
+                    .gravity("ground");
             }
         },
         tank:function () {
